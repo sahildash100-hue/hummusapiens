@@ -1,0 +1,9 @@
+# Normalise line endings: store LF in the repo (Linux/Docker/Render run this).
+* text=auto eol=lf
+
+# Binary assets — never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.svg text eol=lf
+*.ico binary
