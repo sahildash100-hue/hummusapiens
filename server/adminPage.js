@@ -92,8 +92,10 @@ export const ADMIN_HTML = `<!doctype html>
   function render(rows){
     if(!rows.length){$('wrap').innerHTML='<div class="empty">No orders yet.</div>';$('totals').textContent='';return}
     var paid=rows.filter(function(o){return o.status==='paid'});
+    var pre=rows.filter(function(o){return o.status==='preorder'});
     var rev=paid.reduce(function(n,o){return n+Number(o.amount||0)},0);
-    $('totals').textContent=rows.length+' orders · '+paid.length+' paid · revenue '+inr(rev);
+    var prev=pre.reduce(function(n,o){return n+Number(o.amount||0)},0);
+    $('totals').textContent=rows.length+' total · '+pre.length+' preorders ('+inr(prev)+' intended) · '+paid.length+' paid · revenue '+inr(rev);
     var h='<table><thead><tr><th>Order</th><th>Status</th><th>Items</th><th>Amount</th><th>Created</th><th>Paid</th><th>Payment ID</th></tr></thead><tbody>';
     rows.forEach(function(o){
       var items=(o.items||[]).map(function(i){return esc(i.qty+'× '+i.name)}).join('<br>');

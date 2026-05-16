@@ -29,7 +29,14 @@ function writeAll(obj) {
   renameSync(TMP, FILE);
 }
 
-export function saveCreatedOrder({ orderId, amount, currency, items, customer }) {
+export function saveCreatedOrder({
+  orderId,
+  amount,
+  currency,
+  items,
+  customer,
+  status = "created",
+}) {
   const all = readAll();
   all[orderId] = {
     orderId,
@@ -37,7 +44,7 @@ export function saveCreatedOrder({ orderId, amount, currency, items, customer })
     currency,
     items,
     customer: customer || null,
-    status: "created",
+    status,
     createdAt: new Date().toISOString(),
     paymentId: null,
     paidAt: null,

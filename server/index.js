@@ -122,6 +122,53 @@ app.get("/admin", (_req, res) => {
   res.type("html").send(ADMIN_HTML);
 });
 
+// Preorder / lead capture — no payment. Records intent + contact so we
+// can gauge demand before turning on real payments.
+app.post("/api/preorder", async (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (items.length === 0) {
+    return res.status(400).json({ error: "Please add at least one item." });
+  }
+  const c = req.body?.customer || {};
+  const customer = {
+    name: String(c.name || "").trim().slice(0, 80),
+    email: String(c.email || "").trim().slice(0, 120),
+    phone: String(c.phone || "").trim().slice(0, 20),
+  };
+  if (!customer.name || !/^\S+@\S+\.\S+$/.test(customer.email)) {
+    return res
+      .status(400)
+      .json({ error: "Please provide your name and a valid email." });
+  }
+  let amount = 0; // rupees — intended value, for reporting only
+  for (const it of items) {
+    const price = CATALOG[it?.name];
+    const qty = Number(it?.qty);
+    if (price === undefined) {
+      return res.status(400).json({ error: `Unknown item: ${it?.name}` });
+    }
+    if (!Number.isInteger(qty) || qty < 1 || qty > 99) {
+      return res.status(400).json({ error: `Invalid quantity for ${it?.name}` });
+    }
+    amount += price * qty;
+  }
+  const id = `pre_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+  try {
+    await saveCreatedOrder({
+      orderId: id,
+      amount: amount * 100, // paise, for consistent reporting with orders
+      currency: "INR",
+      items: items.map((i) => ({ name: i.name, qty: i.qty })),
+      customer,
+      status: "preorder",
+    });
+    res.json({ ok: true, id });
+  } catch (e) {
+    console.error("preorder save failed:", e?.message || e);
+    res.status(500).json({ error: "Could not record preorder. Try again." });
+  }
+});
+
 app.post("/api/razorpay/order", async (req, res) => {
   if (!razorpay) {
     return res

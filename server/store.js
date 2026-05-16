@@ -68,7 +68,7 @@ export async function saveCreatedOrder(o) {
   if (!pool) return fileOrders.saveCreatedOrder(o);
   await pool.query(
     `INSERT INTO orders (order_id, amount, currency, items, customer, status)
-     VALUES ($1,$2,$3,$4,$5,'created')
+     VALUES ($1,$2,$3,$4,$5,$6)
      ON CONFLICT (order_id) DO NOTHING`,
     [
       o.orderId,
@@ -76,6 +76,7 @@ export async function saveCreatedOrder(o) {
       o.currency,
       JSON.stringify(o.items),
       JSON.stringify(o.customer || null),
+      o.status || "created",
     ]
   );
 }

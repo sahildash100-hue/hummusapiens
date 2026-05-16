@@ -1,29 +1,12 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
-// Orders are placed over WhatsApp. Put the brand's number here in full
-// international format with no "+", spaces or dashes (e.g. "919876543210").
-// Leave it empty to open WhatsApp and let the user pick the chat.
-const WHATSAPP_NUMBER = "";
 const CONTACT_EMAIL = "hello@hummusapiens.in";
 
-// Payments go through our own backend (see /server). The browser never
-// holds any Razorpay secret — the server creates the order, returns the
-// public Key ID, and verifies the payment signature after checkout.
-// Configure the live/test keys in server/.env, not here.
+// Preorder phase: no payment is taken. The cart submits a lead (chosen
+// items + contact) to the backend so we can gauge demand. The payment
+// backend stays in place for when we switch checkout back on.
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8787";
-const RZP_SCRIPT = "https://checkout.razorpay.com/v1/checkout.js";
-
-function loadRazorpay() {
-  return new Promise((resolve) => {
-    if (window.Razorpay) return resolve(true);
-    const s = document.createElement("script");
-    s.src = RZP_SCRIPT;
-    s.onload = () => resolve(true);
-    s.onerror = () => resolve(false);
-    document.body.appendChild(s);
-  });
-}
 
 const NAV = ["Home", "About", "Products", "Gallery", "Reviews", "Contact"];
 
@@ -210,35 +193,16 @@ export default function App() {
   const removeItem = (name) =>
     setCart((c) => c.filter((i) => i.name !== name));
 
-  const checkoutWhatsApp = () => {
-    if (!cart.length) return;
-    const lines = cart
-      .map((i) => `• ${i.qty} × ${i.name} — ₹${i.qty * i.price}`)
-      .join("\n");
-    const text = encodeURIComponent(
-      `Hi Hummusapiens! 🌿 I'd like to place an order:\n\n${lines}\n\n` +
-        `Subtotal: ₹${subtotal}\n\nName:\nDelivery address:\nPreferred delivery date:`
-    );
-    const base = WHATSAPP_NUMBER
-      ? `https://wa.me/${WHATSAPP_NUMBER}`
-      : `https://wa.me/`;
-    window.open(`${base}?text=${text}`, "_blank", "noopener");
-  };
-
-  const checkoutRazorpay = async () => {
+  const placePreorder = async () => {
     if (!cart.length) return;
     if (!canPay) {
-      setPayMsg("Please enter your name and a valid email to continue.");
+      setPayMsg("Please enter your name and a valid email to reserve.");
       return;
     }
     setPayMsg(null);
     setPaying(true);
-
-    // 1) Ask our backend to create a Razorpay order. The amount is computed
-    //    server-side from the product catalog, so it can't be tampered with.
-    let order;
     try {
-      const resp = await fetch(`${API_BASE}/api/razorpay/order`, {
+      const resp = await fetch(`${API_BASE}/api/preorder`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -246,72 +210,19 @@ export default function App() {
           customer,
         }),
       });
-      order = await resp.json();
-      if (!resp.ok) throw new Error(order?.error || "Order failed");
+      const out = await resp.json();
+      if (!resp.ok || !out.ok) throw new Error(out?.error || "Failed");
+      setCart([]);
+      setPaying(false);
+      setPlaced(true);
     } catch (err) {
       setPaying(false);
       setPayMsg(
-        err.message?.includes("not configured")
-          ? "Online payment isn't set up yet — order on WhatsApp below."
-          : "Couldn't start payment. Please try WhatsApp, or retry shortly."
+        err.message?.includes("valid email")
+          ? "Please enter your name and a valid email to reserve."
+          : "Couldn't submit your preorder. Please try again in a moment."
       );
-      return;
     }
-
-    // 2) Load the Razorpay checkout widget.
-    const ok = await loadRazorpay();
-    if (!ok || !window.Razorpay) {
-      setPaying(false);
-      setPayMsg("Couldn't reach the payment gateway. Please try WhatsApp.");
-      return;
-    }
-
-    // 3) Open checkout bound to the server-created order.
-    const rzp = new window.Razorpay({
-      key: order.keyId,
-      order_id: order.orderId,
-      amount: order.amount,
-      currency: order.currency,
-      name: "Hummusapiens",
-      description: `${count} item${count > 1 ? "s" : ""} · artisan hummus`,
-      image: "/img/mascot.png",
-      theme: { color: "#5b7341" },
-      prefill: {
-        name: customer.name,
-        email: customer.email,
-        contact: customer.phone,
-      },
-      handler: async (resp) => {
-        // 4) Verify the payment signature on the backend before confirming.
-        try {
-          const v = await fetch(`${API_BASE}/api/razorpay/verify`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(resp),
-          });
-          const out = await v.json();
-          if (!v.ok || !out.verified) throw new Error("unverified");
-          setCart([]);
-          setPaying(false);
-          setPlaced(true);
-          fetch(`${API_BASE}/api/stock`)
-            .then((r) => r.json())
-            .then((d) => setStock(d.stock || {}))
-            .catch(() => {});
-        } catch {
-          setPaying(false);
-          setPayMsg(
-            "Payment received but could not be verified. Contact us before re-paying."
-          );
-        }
-      },
-      modal: { ondismiss: () => setPaying(false) },
-    });
-    rzp.on("payment.failed", () => {
-      setPaying(false);
-      setPayMsg("Payment failed or was cancelled. You can retry or use WhatsApp.");
-    });
-    rzp.open();
   };
 
   const onSubmit = (e) => {
@@ -646,10 +557,10 @@ export default function App() {
         {placed ? (
           <div className="drawer-empty">
             <img src="/img/mascot.png" alt="" />
-            <h4>Order placed! 🎉</h4>
+            <h4>You're on the list! 🎉</h4>
             <p>
-              Thank you — your payment was received. We'll message you on
-              WhatsApp with delivery details shortly.
+              Preorder reserved — no payment taken. We'll email you the
+              moment it's ready to ship.
             </p>
             <button
               className="btn btn-primary"
@@ -741,31 +652,26 @@ export default function App() {
                 />
               </div>
               <div className="d-subtotal">
-                <span>Subtotal</span>
+                <span>Estimated total</span>
                 <strong>₹{subtotal}</strong>
               </div>
               <p className="d-note">
-                Secure payment by Razorpay — UPI, cards & netbanking.
+                Preorder now — <strong>no payment taken</strong>. Reserve
+                your batch and we'll email you when it ships.
               </p>
               {payMsg && <p className="d-warn">{payMsg}</p>}
               <button
                 className="btn btn-primary btn-block"
-                onClick={checkoutRazorpay}
+                onClick={placePreorder}
                 disabled={paying || !canPay}
               >
-                {paying ? "Processing…" : `Pay ₹${subtotal} securely`}
-              </button>
-              <button
-                className="btn btn-ghost btn-block"
-                onClick={checkoutWhatsApp}
-              >
-                Order on WhatsApp instead
+                {paying ? "Reserving…" : "Place Preorder"}
               </button>
               <button
                 className="btn-link"
                 onClick={() => setCartOpen(false)}
               >
-                Continue shopping
+                Continue browsing
               </button>
             </div>
           </>
