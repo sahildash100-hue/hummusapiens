@@ -1,116 +1,111 @@
 # Deploying Hummusapiens to Render
 
-Goal: live on a temporary Render URL first (e.g.
-`https://hummusapiens-web.onrender.com`), with **real** Razorpay payments.
-Move to the `hummusapiens.in` domain only after you've tested.
+Two phases:
+- **Phase A — free test (now):** full working site on free Render URLs,
+  $0, Razorpay **test** keys. Verify everything end to end.
+- **Phase B — real launch (later):** paid persistent disk + Razorpay
+  **live** keys + the real domain.
+
+The code is already on GitHub:
+`https://github.com/sahildash100-hue/hummusapiens` (branch `main`).
+`render.yaml` is currently set to the **free** plan for Phase A.
 
 ---
 
-## ⚠️ Read first
+## Phase A — free test
 
-- **Real payments from day one.** Razorpay live mode has no test cards —
-  every checkout is real money. You will do one real purchase to verify,
-  then refund it from the Razorpay dashboard.
-- **Cost.** The API needs a persistent disk (so orders/stock survive
-  restarts). That requires Render's **Starter** instance (~$7/month). The
-  static frontend is **free**.
-- **Content check before launch.** Two products (Lemon-Garlic Tahini Dip,
-  Spicy Harissa Hummus) use a placeholder image; testimonial quotes are
-  sample copy; prices were taken from the reference site. Review
-  `PRODUCTS` in `src/App.jsx` and confirm everything is accurate — this is
-  a real store taking real orders.
+### A1. Create the services
 
----
+1. https://dashboard.render.com → sign in **with GitHub**.
+2. **New + → Blueprint** → pick `sahildash100-hue/hummusapiens`
+   (approve Render's GitHub app for the repo if asked).
+3. Render reads `render.yaml` and proposes two **free** services:
+   - `hummusapiens-api` (Node)
+   - `hummusapiens-web` (static site)
+4. It will prompt for the `sync:false` env vars — **leave them blank**,
+   click **Apply**. (We set them next, once the URLs exist.)
 
-## 1. Put the code on GitHub
+### A2. Wire the services + add test secrets
 
-The repo is already initialised locally with a first commit. Create an
-empty repo on GitHub (e.g. `hummusapiens`), then from `hummusapiens-web/`:
+After both deploy, note the two URLs (e.g.
+`https://hummusapiens-api.onrender.com`,
+`https://hummusapiens-web.onrender.com`). Then in Render:
 
-```bash
-git remote add origin https://github.com/<you>/hummusapiens.git
-git branch -M main
-git push -u origin main
-```
-
-(Secrets are gitignored — `.env`, `server/.env`, and `server/data` are
-never pushed.)
-
-## 2. Create the services on Render
-
-1. Render dashboard → **New → Blueprint** → connect the GitHub repo.
-   Render reads `render.yaml` and proposes two services:
-   - `hummusapiens-api` (Node, Starter, 1 GB disk)
-   - `hummusapiens-web` (static site, free)
-2. Apply. The first build will start. The **API** will be healthy at
-   `/api/health`; the **web** build will succeed but can't talk to the API
-   yet — that's expected until step 3.
-
-## 3. Wire the two services together + add secrets
-
-In the Render dashboard, set these environment variables (you'll be
-prompted for the `sync:false` ones):
-
-**On `hummusapiens-api`:**
+**`hummusapiens-api` → Environment:**
 
 | Var | Value |
 |-----|-------|
-| `ALLOWED_ORIGIN` | the web service URL, e.g. `https://hummusapiens-web.onrender.com` |
-| `RAZORPAY_KEY_ID` | your **live** `rzp_live_…` key id |
-| `RAZORPAY_KEY_SECRET` | your live key secret |
-| `RAZORPAY_WEBHOOK_SECRET` | a strong random string (you'll reuse it in step 4) |
-| `ADMIN_TOKEN` | a long random string (for `/admin`) |
-| `SMTP_*`, `MAIL_FROM`, `OWNER_EMAIL` | optional — set to enable emails |
+| `ALLOWED_ORIGIN` | the **web** URL |
+| `RAZORPAY_KEY_ID` | your **test** `rzp_test_…` id |
+| `RAZORPAY_KEY_SECRET` | your **test** key secret |
+| `RAZORPAY_WEBHOOK_SECRET` | any strong random string (reused in A3) |
+| `ADMIN_TOKEN` | a long random string |
+| `SMTP_*`, `MAIL_FROM`, `OWNER_EMAIL` | optional (emails) |
 
-`DATA_DIR=/var/data` is already set by the blueprint (the disk).
-
-**On `hummusapiens-web`:**
+**`hummusapiens-web` → Environment:**
 
 | Var | Value |
 |-----|-------|
-| `VITE_API_BASE` | the API service URL, e.g. `https://hummusapiens-api.onrender.com` |
+| `VITE_API_BASE` | the **API** URL |
 
 Then **Manual Deploy → Clear build cache & deploy** the **web** service
-(so `VITE_API_BASE` is baked into the build), and redeploy the API if it
-didn't pick up the new vars.
+(so `VITE_API_BASE` bakes into the build).
 
-## 4. Add the Razorpay webhook
+### A3. Razorpay webhook (test mode)
 
-Razorpay Dashboard → **Settings → Webhooks → Add**:
+Razorpay Dashboard (Test mode) → **Settings → Webhooks → Add**:
+- URL: `https://<api>.onrender.com/api/razorpay/webhook`
+- Secret: same value as `RAZORPAY_WEBHOOK_SECRET`
+- Events: `payment.captured` (and optionally `order.paid`)
 
-- URL: `https://<your-api>.onrender.com/api/razorpay/webhook`
-- Secret: the **same** value you used for `RAZORPAY_WEBHOOK_SECRET`
-- Active events: `payment.captured` (and optionally `order.paid`)
+### A4. Test the whole flow
 
-This is the backstop that confirms an order even if the buyer closes the
-tab after paying.
+1. Open the web URL (first hit may take ~50s — free API waking up).
+2. Add an item → fill name/email → **Pay** → use a Razorpay
+   [test card](https://razorpay.com/docs/payments/payments/test-card-details/)
+   (e.g. card `4111 1111 1111 1111`, any future expiry/CVV).
+3. Check `https://<api>.onrender.com/admin` (enter `ADMIN_TOKEN`):
+   the order shows **paid** and stock dropped.
+4. Webhook delivery shows `2xx` in the Razorpay dashboard.
 
-## 5. Go-live verification (do this immediately)
+No real money moves in test mode. Note: free API sleeps after ~15 min
+idle and **resets orders/stock on restart** — expected for a test.
 
-1. Open the web URL. Add an item, fill name/email, **Pay** — use your own
-   real card/UPI (smallest item is ₹259).
-2. Confirm: success screen → check `https://<api>/admin` (enter
-   `ADMIN_TOKEN`): the order shows **paid**, stock decremented, and (if
-   SMTP set) the confirmation email arrived.
-3. **Refund that test payment** from the Razorpay dashboard so you're not
-   out the money.
-4. Check the webhook delivery shows `2xx` in the Razorpay dashboard.
+---
 
-If all four pass, you're live and taking orders.
+## Phase B — real launch (when ready)
 
-## 6. Day-to-day
+1. **Content check:** two products (Lemon-Garlic Tahini Dip, Spicy
+   Harissa Hummus) use a placeholder image and testimonial quotes are
+   sample copy — review `PRODUCTS` in `src/App.jsx` first.
+2. In `render.yaml` change the API to a persistent, paid instance:
+   ```yaml
+   plan: starter            # ~$7/mo, was: free
+   disk:
+     name: hummusapiens-data
+     mountPath: /var/data
+     sizeGB: 1
+   envVars:
+     - key: DATA_DIR
+       value: /var/data     # add this so data lives on the disk
+   ```
+   Commit + push; Render redeploys.
+3. Swap the API env vars to **live** Razorpay creds (`rzp_live_…` + live
+   secret), and add a **live-mode** webhook in the Razorpay dashboard
+   pointing at the same `/api/razorpay/webhook` URL.
+4. **Go-live check:** one real ₹259 purchase with your own card/UPI →
+   confirm paid in `/admin` + stock dropped + webhook `2xx` → then
+   **refund it** from the Razorpay dashboard.
+5. **Custom domain:** Render → `hummusapiens-web` → Settings → Custom
+   Domains → add `hummusapiens.in` (+ `www`); set the shown DNS records
+   at your registrar (this replaces the current site); Render issues SSL.
+   Update `ALLOWED_ORIGIN` / `VITE_API_BASE` if the API also moves to a
+   custom subdomain, then redeploy the web service.
 
-- Admin / stock / orders: `https://<your-api>.onrender.com/admin`
-- Manage inventory from the Stock panel there.
-- Logs & redeploys: Render dashboard per service.
+---
 
-## 7. Later: the real domain
+## Day-to-day
 
-When ready to use `hummusapiens.in` (this replaces the current site):
-
-- Render → `hummusapiens-web` → **Settings → Custom Domains** → add
-  `hummusapiens.in` (and `www`). Render shows the DNS records.
-- At your domain registrar, point the records as instructed; Render issues
-  SSL automatically.
-- Update `ALLOWED_ORIGIN` (API) and `VITE_API_BASE` (web) if you also move
-  the API to a custom subdomain, then redeploy the web service.
+- Admin / stock / orders: `https://<api>.onrender.com/admin`
+- Logs & manual redeploys: Render dashboard, per service.
+- Push to `main` → Render auto-deploys both services.

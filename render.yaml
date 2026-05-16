@@ -2,31 +2,29 @@
 # Render injects PORT automatically; the API listens on it.
 # Secrets are marked sync:false → Render prompts you for them (never in Git).
 #
-# NOTE: the API uses a persistent disk so orders.json / stock.json survive
-# restarts and deploys. Disks require a paid instance (Starter). The static
-# site is free.
+# >>> FREE TEST CONFIG <<<
+# Both services run on Render's FREE plan. Caveats while testing:
+#   - the API spins down after ~15 min idle (first request is slow), and
+#   - it has NO persistent disk, so orders.json / stock.json RESET on every
+#     restart/redeploy. That's fine for testing the flow.
+# Use Razorpay TEST keys here. Before a real launch see DEPLOY.md
+# "Phase B" — switch the API to plan: starter and add the disk block.
 
 services:
   - type: web
     name: hummusapiens-api
     runtime: node
     rootDir: server
-    plan: starter
+    plan: free
     buildCommand: npm install
     startCommand: node index.js
     healthCheckPath: /api/health
     autoDeploy: true
-    disk:
-      name: hummusapiens-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
-      - key: DATA_DIR
-        value: /var/data
       # Set after the static site exists (its public URL), for CORS:
       - key: ALLOWED_ORIGIN
         sync: false
-      # Razorpay LIVE credentials (Dashboard → Settings → API Keys / Webhooks):
+      # Razorpay TEST credentials for this phase (rzp_test_…):
       - key: RAZORPAY_KEY_ID
         sync: false
       - key: RAZORPAY_KEY_SECRET
@@ -56,6 +54,7 @@ services:
     name: hummusapiens-web
     runtime: static
     rootDir: .
+    plan: free
     buildCommand: npm install && npm run build
     staticPublishPath: dist
     autoDeploy: true
