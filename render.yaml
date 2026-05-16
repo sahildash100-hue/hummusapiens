@@ -21,6 +21,10 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
+      # Free Postgres (Neon/Supabase) connection string. With this set,
+      # orders/stock survive restarts. Without it, data is ephemeral.
+      - key: DATABASE_URL
+        sync: false
       # Set after the static site exists (its public URL), for CORS:
       - key: ALLOWED_ORIGIN
         sync: false

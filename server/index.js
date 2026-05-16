@@ -3,15 +3,23 @@ import express from "express";
 import cors from "cors";
 import crypto from "node:crypto";
 import Razorpay from "razorpay";
-import { saveCreatedOrder, markPaid, listOrders } from "./orders.js";
-import { getStock, setStock, decrementStock } from "./stock.js";
+import {
+  initStore,
+  storeMode,
+  saveCreatedOrder,
+  markPaid,
+  listOrders,
+  getStock,
+  setStock,
+  decrementStock,
+} from "./store.js";
 import { sendOrderEmails } from "./mailer.js";
 import { ADMIN_HTML } from "./adminPage.js";
 
 // Runs the one-time side effects when an order first becomes paid.
-function onFirstPaid(order) {
+async function onFirstPaid(order) {
   try {
-    decrementStock(order.items);
+    await decrementStock(order.items);
   } catch (e) {
     console.error("stock decrement failed:", e?.message || e);
   }
@@ -60,7 +68,7 @@ app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.post(
   "/api/razorpay/webhook",
   express.raw({ type: "*/*" }),
-  (req, res) => {
+  async (req, res) => {
     if (!RAZORPAY_WEBHOOK_SECRET) {
       return res.status(503).json({ error: "Webhook not configured." });
     }
@@ -92,8 +100,12 @@ app.post(
       (evt?.event === "payment.captured" || evt?.event === "order.paid") &&
       orderId
     ) {
-      const { firstPaid, order } = markPaid(orderId, paymentId);
-      if (firstPaid && order) onFirstPaid(order);
+      try {
+        const { firstPaid, order } = await markPaid(orderId, paymentId);
+        if (firstPaid && order) await onFirstPaid(order);
+      } catch (e) {
+        console.error("webhook markPaid failed:", e?.message || e);
+      }
     }
     // Always 2xx so Razorpay doesn't retry indefinitely.
     res.json({ received: true });
@@ -103,7 +115,7 @@ app.post(
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, keysReady, mode });
+  res.json({ ok: true, keysReady, mode, store: storeMode });
 });
 
 app.get("/admin", (_req, res) => {
@@ -134,7 +146,7 @@ app.post("/api/razorpay/order", async (req, res) => {
       .json({ error: "Please provide your name and a valid email." });
   }
 
-  const stock = getStock();
+  const stock = await getStock();
   let amount = 0; // rupees
   for (const it of items) {
     const price = CATALOG[it?.name];
@@ -166,7 +178,7 @@ app.post("/api/razorpay/order", async (req, res) => {
         items: items.map((i) => `${i.qty}x ${i.name}`).join(", "),
       },
     });
-    saveCreatedOrder({
+    await saveCreatedOrder({
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
@@ -185,7 +197,7 @@ app.post("/api/razorpay/order", async (req, res) => {
   }
 });
 
-app.post("/api/razorpay/verify", (req, res) => {
+app.post("/api/razorpay/verify", async (req, res) => {
   if (!RAZORPAY_KEY_SECRET) {
     return res.status(503).json({ error: "Payment not configured." });
   }
@@ -208,11 +220,15 @@ app.post("/api/razorpay/verify", (req, res) => {
     return res.status(400).json({ verified: false });
   }
   // Payment is cryptographically confirmed — record it as paid.
-  const { firstPaid, order } = markPaid(
-    razorpay_order_id,
-    razorpay_payment_id
-  );
-  if (firstPaid && order) onFirstPaid(order);
+  try {
+    const { firstPaid, order } = await markPaid(
+      razorpay_order_id,
+      razorpay_payment_id
+    );
+    if (firstPaid && order) await onFirstPaid(order);
+  } catch (e) {
+    console.error("verify markPaid failed:", e?.message || e);
+  }
   res.json({ verified: true });
 });
 
@@ -228,28 +244,45 @@ function adminOnly(req, res, next) {
   next();
 }
 
-app.get("/api/orders", adminOnly, (_req, res) => {
-  res.json({ orders: listOrders() });
+app.get("/api/orders", adminOnly, async (_req, res) => {
+  try {
+    res.json({ orders: await listOrders() });
+  } catch (e) {
+    console.error("listOrders failed:", e?.message || e);
+    res.status(500).json({ error: "Could not load orders." });
+  }
 });
 
 // Public: lets the storefront show stock levels / sold-out state.
-app.get("/api/stock", (_req, res) => {
-  res.json({ stock: getStock() });
+app.get("/api/stock", async (_req, res) => {
+  try {
+    res.json({ stock: await getStock() });
+  } catch (e) {
+    console.error("getStock failed:", e?.message || e);
+    res.status(500).json({ error: "Could not load stock." });
+  }
 });
 
 // Admin: set absolute stock counts. Body: { stock: { "The O.G": 12, ... } }.
-app.post("/api/stock", adminOnly, (req, res) => {
+app.post("/api/stock", adminOnly, async (req, res) => {
   const next = req.body?.stock;
   if (!next || typeof next !== "object") {
     return res.status(400).json({ error: "Body must be { stock: {...} }." });
   }
-  res.json({ stock: setStock(next) });
+  res.json({ stock: await setStock(next) });
 });
 
-app.listen(PORT, () => {
-  console.log(
-    `Hummusapiens API on http://localhost:${PORT}  (keys: ${
-      keysReady ? mode : "MISSING"
-    })`
-  );
-});
+initStore()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(
+        `Hummusapiens API on http://localhost:${PORT}  (keys: ${
+          keysReady ? mode : "MISSING"
+        }, store: ${storeMode})`
+      );
+    });
+  })
+  .catch((e) => {
+    console.error("Store init failed — cannot start:", e?.message || e);
+    process.exit(1);
+  });

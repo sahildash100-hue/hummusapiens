@@ -10,7 +10,7 @@ const DATA_DIR = process.env.DATA_DIR
 const FILE = join(DATA_DIR, "stock.json");
 const TMP = join(DATA_DIR, "stock.tmp.json");
 
-const SEED = {
+export const SEED = {
   "The O.G": 40,
   "The Beetrooter": 30,
   "Paprika Twist": 30,

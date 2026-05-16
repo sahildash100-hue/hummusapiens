@@ -25,6 +25,20 @@ The code is already on GitHub:
 4. It will prompt for the `sync:false` env vars — **leave them blank**,
    click **Apply**. (We set them next, once the URLs exist.)
 
+### A1b. Free database (so orders/stock survive restarts)
+
+Render's free instance has no persistent disk — without a database,
+orders and stock reset on every restart/redeploy. A free Postgres fixes
+this:
+
+1. Sign up at **https://neon.tech** (free tier) → create a project.
+2. Copy the **connection string** (looks like
+   `postgresql://user:pass@ep-xxxx.region.aws.neon.tech/dbname?sslmode=require`).
+3. You'll paste it as the `DATABASE_URL` env var in A2.
+
+(Supabase works too — use its "Connection string → URI". If you skip
+this, the site still runs but loses data on restart.)
+
 ### A2. Wire the services + add test secrets
 
 After both deploy, note the two URLs (e.g.
@@ -35,12 +49,16 @@ After both deploy, note the two URLs (e.g.
 
 | Var | Value |
 |-----|-------|
+| `DATABASE_URL` | the Neon connection string from A1b |
 | `ALLOWED_ORIGIN` | the **web** URL |
 | `RAZORPAY_KEY_ID` | your **test** `rzp_test_…` id |
 | `RAZORPAY_KEY_SECRET` | your **test** key secret |
 | `RAZORPAY_WEBHOOK_SECRET` | any strong random string (reused in A3) |
 | `ADMIN_TOKEN` | a long random string |
 | `SMTP_*`, `MAIL_FROM`, `OWNER_EMAIL` | optional (emails) |
+
+The API logs `store: postgres` on boot when `DATABASE_URL` is set
+(`store: file` otherwise). `/api/health` also reports it.
 
 **`hummusapiens-web` → Environment:**
 
@@ -68,8 +86,21 @@ Razorpay Dashboard (Test mode) → **Settings → Webhooks → Add**:
    the order shows **paid** and stock dropped.
 4. Webhook delivery shows `2xx` in the Razorpay dashboard.
 
-No real money moves in test mode. Note: free API sleeps after ~15 min
-idle and **resets orders/stock on restart** — expected for a test.
+No real money moves in test mode. With `DATABASE_URL` set, orders/stock
+now **survive restarts** (stored in Neon, not on the disk).
+
+### A5. Keep-alive (reduce cold starts)
+
+The free API still sleeps after ~15 min idle (first visitor then waits
+~50s). To keep it warm, set up a free uptime ping:
+
+1. https://cron-job.org (or UptimeRobot) → create a free account.
+2. New cron job → URL `https://<api>.onrender.com/api/health` → every
+   **10 minutes**.
+
+This greatly reduces cold starts. Note Render's free plan has a monthly
+hour cap (~750h ≈ one always-on service) — fine for one API, but it's
+why a real launch (Phase B) moves to the paid instance.
 
 ---
 
@@ -78,18 +109,16 @@ idle and **resets orders/stock on restart** — expected for a test.
 1. **Content check:** two products (Lemon-Garlic Tahini Dip, Spicy
    Harissa Hummus) use a placeholder image and testimonial quotes are
    sample copy — review `PRODUCTS` in `src/App.jsx` first.
-2. In `render.yaml` change the API to a persistent, paid instance:
+2. Persistence is already handled by the `DATABASE_URL` Postgres, so no
+   disk is needed. For a real launch the main reason to leave free is
+   cold starts — upgrade the API for always-on by changing one line in
+   `render.yaml`:
    ```yaml
-   plan: starter            # ~$7/mo, was: free
-   disk:
-     name: hummusapiens-data
-     mountPath: /var/data
-     sizeGB: 1
-   envVars:
-     - key: DATA_DIR
-       value: /var/data     # add this so data lives on the disk
+   plan: starter            # ~$7/mo, was: free  (no disk needed — DB persists)
    ```
-   Commit + push; Render redeploys.
+   Commit + push; Render redeploys. (Optional — a kept-alive free
+   instance can work, but Starter removes cold starts and the monthly
+   hour cap, which matters once you run ads.)
 3. Swap the API env vars to **live** Razorpay creds (`rzp_live_…` + live
    secret), and add a **live-mode** webhook in the Razorpay dashboard
    pointing at the same `/api/razorpay/webhook` URL.
