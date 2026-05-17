@@ -8,7 +8,7 @@ const CONTACT_EMAIL = "hello@hummusapiens.in";
 // backend stays in place for when we switch checkout back on.
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8787";
 
-const NAV = ["Home", "About", "Products", "Gallery", "Reviews", "Contact"];
+const NAV = ["Home", "About", "Products", "Gallery", "Contact"];
 
 const PRODUCTS = [
   {
@@ -40,25 +40,11 @@ const PRODUCTS = [
     tags: ["Vegan", "Gluten-Free", "Chef's Pick"],
   },
   {
-    name: "Lemon-Garlic Tahini Dip",
-    price: 319,
-    img: null,
-    desc: "Zesty lemon and roasted garlic dance together in a silky tahini dip.",
-    tags: ["Vegan", "Gluten-Free"],
-  },
-  {
     name: "Jalapeño Punch",
     price: 319,
     img: "/img/jalapeno.png",
     desc: "A zesty, clean heat layered over our signature creamy chickpea base.",
     tags: ["Vegan", "Gluten-Free", "Best Seller"],
-  },
-  {
-    name: "Spicy Harissa Hummus",
-    price: 319,
-    img: null,
-    desc: "Add a kick to your snacking with this bold North-African spiced blend.",
-    tags: ["Vegan", "Spicy"],
   },
   {
     name: "Dark Choco Muse",
@@ -83,29 +69,6 @@ const FEATURES = [
   { t: "Clean Ingredients", d: "Real food. Zero preservatives, ever." },
   { t: "Gut-Friendly", d: "High in protein and fibre, kind on you." },
   { t: "Crafted in Small Batches", d: "Made with love and the finest ingredients." },
-];
-
-const REVIEWS = [
-  {
-    q: "The O.G is the creamiest hummus I've had — it's a staple in my post-workout meals now.",
-    n: "Jessica Martinez",
-    r: "Fitness Enthusiast",
-  },
-  {
-    q: "As a home chef, I'm picky. Hummusapiens nails the balance of tahini and lemon perfectly.",
-    n: "Michael Harris",
-    r: "Home Chef",
-  },
-  {
-    q: "I serve these at every event I cater. Guests always ask where the Beetrooter is from.",
-    n: "Sophia Lee",
-    r: "Catering Business Owner",
-  },
-  {
-    q: "Genuinely clean ingredients and seriously bold flavour. The Jalapeño Punch is unreal.",
-    n: "Aaron Patel",
-    r: "Health Blogger",
-  },
 ];
 
 function useReveal() {
@@ -377,13 +340,7 @@ export default function App() {
                   data-reveal
                 >
                   <div className="card-media">
-                    {p.img ? (
-                      <img src={p.img} alt={p.name} />
-                    ) : (
-                      <div className="card-ph">
-                        <img src="/img/mascot.png" alt="" />
-                      </div>
-                    )}
+                    <img src={p.img} alt={p.name} />
                     <div className="card-tags">
                       {p.tags.map((t) => (
                         <span
@@ -433,25 +390,6 @@ export default function App() {
               <div className={`g-tile g-${i}`} key={g}>
                 <img src={g} alt="Hummus serving" />
               </div>
-            ))}
-          </div>
-        </section>
-
-        <section id="reviews" className="reviews">
-          <div className="section-head" data-reveal>
-            <span className="kicker">Loved by Many</span>
-            <h2>What our customers say</h2>
-          </div>
-          <div className="review-grid">
-            {REVIEWS.map((rv) => (
-              <figure className="review" key={rv.n} data-reveal>
-                <div className="stars">★★★★★</div>
-                <blockquote>“{rv.q}”</blockquote>
-                <figcaption>
-                  <strong>{rv.n}</strong>
-                  <span>{rv.r}</span>
-                </figcaption>
-              </figure>
             ))}
           </div>
         </section>

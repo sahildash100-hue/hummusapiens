@@ -15,9 +15,7 @@ export const SEED = {
   "The Beetrooter": 30,
   "Paprika Twist": 30,
   "Caramelised Kick": 25,
-  "Lemon-Garlic Tahini Dip": 20,
   "Jalapeño Punch": 35,
-  "Spicy Harissa Hummus": 20,
   "Dark Choco Muse": 25,
 };
 

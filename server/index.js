@@ -50,9 +50,7 @@ const CATALOG = {
   "The Beetrooter": 279,
   "Paprika Twist": 299,
   "Caramelised Kick": 299,
-  "Lemon-Garlic Tahini Dip": 319,
   "Jalapeño Punch": 319,
-  "Spicy Harissa Hummus": 319,
   "Dark Choco Muse": 329,
 };
 
@@ -301,9 +299,15 @@ app.get("/api/orders", adminOnly, async (_req, res) => {
 });
 
 // Public: lets the storefront show stock levels / sold-out state.
+// Filtered to the current catalog so retired products (still rows in the
+// DB from an earlier seed) don't appear on the site or in admin.
 app.get("/api/stock", async (_req, res) => {
   try {
-    res.json({ stock: await getStock() });
+    const all = await getStock();
+    const stock = Object.fromEntries(
+      Object.entries(all).filter(([name]) => name in CATALOG)
+    );
+    res.json({ stock });
   } catch (e) {
     console.error("getStock failed:", e?.message || e);
     res.status(500).json({ error: "Could not load stock." });
