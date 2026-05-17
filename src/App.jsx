@@ -110,6 +110,8 @@ export default function App() {
   const [cart, setCart] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [sent, setSent] = useState(false);
+  const [contactErr, setContactErr] = useState("");
+  const [sending, setSending] = useState(false);
   const [payMsg, setPayMsg] = useState(null);
   const [paying, setPaying] = useState(false);
   const [placed, setPlaced] = useState(false);
@@ -204,18 +206,35 @@ export default function App() {
     }
   };
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
     const f = e.target;
-    const subject = encodeURIComponent(
-      `Website enquiry from ${f.name.value}`
-    );
-    const body = encodeURIComponent(
-      `${f.message.value}\n\n— ${f.name.value} (${f.email.value})`
-    );
-    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
-    setSent(true);
-    f.reset();
+    const payload = {
+      name: f.name.value,
+      email: f.email.value,
+      message: f.message.value,
+    };
+    setContactErr("");
+    setSending(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const out = await r.json();
+      if (!r.ok || !out.ok) throw new Error(out?.error || "Failed");
+      setSending(false);
+      setSent(true);
+      f.reset();
+    } catch (err) {
+      setSending(false);
+      setContactErr(
+        err.message?.includes("valid email")
+          ? "Please enter your name, a valid email and a message."
+          : "Couldn't send right now. Please email hello@hummusapiens.in."
+      );
+    }
   };
 
   return (
@@ -426,9 +445,11 @@ export default function App() {
             <form className="contact-form" data-reveal onSubmit={onSubmit}>
               {sent && (
                 <p className="form-ok">
-                  Thanks! We'll be in touch shortly. 🌿
+                  Thanks! Your message has been sent — we'll be in touch
+                  shortly. 🌿
                 </p>
               )}
+              {contactErr && <p className="d-warn">{contactErr}</p>}
               <label>
                 Name
                 <input type="text" name="name" required placeholder="Your name" />
@@ -451,8 +472,12 @@ export default function App() {
                   placeholder="How can we help?"
                 />
               </label>
-              <button type="submit" className="btn btn-primary btn-block">
-                Send Message
+              <button
+                type="submit"
+                className="btn btn-primary btn-block"
+                disabled={sending}
+              >
+                {sending ? "Sending…" : "Send Message"}
               </button>
             </form>
           </div>

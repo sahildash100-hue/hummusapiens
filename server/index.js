@@ -14,7 +14,7 @@ import {
   setStock,
   decrementStock,
 } from "./store.js";
-import { sendOrderEmails } from "./mailer.js";
+import { sendOrderEmails, sendContactEmail } from "./mailer.js";
 import { ADMIN_HTML } from "./adminPage.js";
 
 // Runs the one-time side effects when an order first becomes paid.
@@ -123,6 +123,36 @@ app.get("/admin", (_req, res) => {
 
 // Preorder / lead capture — no payment. Records intent + contact so we
 // can gauge demand before turning on real payments.
+// Contact form. Stored so nothing is ever lost (visible in /admin), and
+// emailed to the brand inbox if SMTP is configured. No mail client, no
+// double step for the visitor.
+app.post("/api/contact", async (req, res) => {
+  const b = req.body || {};
+  const name = String(b.name || "").trim().slice(0, 80);
+  const email = String(b.email || "").trim().slice(0, 120);
+  const message = String(b.message || "").trim().slice(0, 2000);
+  if (!name || !/^\S+@\S+\.\S+$/.test(email) || message.length < 2) {
+    return res
+      .status(400)
+      .json({ error: "Please enter your name, a valid email and a message." });
+  }
+  try {
+    await saveCreatedOrder({
+      orderId: `msg_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
+      amount: 0,
+      currency: "INR",
+      items: [],
+      customer: { name, email, phone: "", message },
+      status: "message",
+    });
+  } catch (e) {
+    console.error("contact save failed:", e?.message || e);
+    return res.status(500).json({ error: "Could not send. Try again." });
+  }
+  const emailed = await sendContactEmail({ name, email, message });
+  res.json({ ok: true, emailed });
+});
+
 app.post("/api/preorder", async (req, res) => {
   const items = Array.isArray(req.body?.items) ? req.body.items : [];
   if (items.length === 0) {

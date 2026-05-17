@@ -50,6 +50,30 @@ export function buildOrderEmails(order) {
   return { customer, owner };
 }
 
+// Sends a contact-form message to the brand inbox. Returns true only if
+// it was actually sent (false if SMTP isn't configured). Reply-To is set
+// to the visitor so you can just hit reply.
+export async function sendContactEmail({ name, email, message }) {
+  if (!mailerReady || !OWNER_EMAIL) {
+    console.log("[mail] contact skipped (SMTP/OWNER_EMAIL not configured)");
+    return false;
+  }
+  try {
+    await getTransport().sendMail({
+      from: MAIL_FROM || SMTP_USER,
+      to: OWNER_EMAIL,
+      replyTo: email,
+      subject: `Website contact from ${name}`,
+      text: `From: ${name} <${email}>\n\n${message}`,
+    });
+    console.log(`[mail] contact message from ${email} delivered`);
+    return true;
+  } catch (err) {
+    console.error("[mail] contact send failed:", err?.message || err);
+    return false;
+  }
+}
+
 let transporter = null;
 function getTransport() {
   if (transporter) return transporter;
