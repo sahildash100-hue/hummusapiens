@@ -5,8 +5,8 @@
 // the request path; callers fire-and-forget).
 import nodemailer from "nodemailer";
 
+const BREVO_API_KEY = (process.env.BREVO_API_KEY || "").trim();
 const {
-  BREVO_API_KEY,
   SMTP_HOST,
   SMTP_PORT,
   SMTP_SECURE,
@@ -151,7 +151,14 @@ export async function sendContactEmail({ name, email, message }) {
 // Admin diagnostic — shows which provider is active and the real result.
 export async function diagnoseMailer() {
   const provider = brevoReady ? "brevo" : smtpReady ? "smtp" : "none";
-  const out = { provider, owner: OWNER_EMAIL || null, from: sender() };
+  const out = {
+    provider,
+    owner: OWNER_EMAIL || null,
+    from: sender(),
+    keyInfo: BREVO_API_KEY
+      ? { len: BREVO_API_KEY.length, prefix: BREVO_API_KEY.slice(0, 8) }
+      : null,
+  };
   if (provider === "none") {
     out.hint = "Set BREVO_API_KEY (recommended) or SMTP_* on the API service.";
     return out;
