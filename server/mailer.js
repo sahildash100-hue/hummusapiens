@@ -1,8 +1,12 @@
-// Order-confirmation email. Best-effort: if SMTP env is missing the send is
-// skipped (logged) and never blocks or breaks the payment flow.
+// Email delivery. Render's free tier blocks outbound SMTP, so we send via
+// an HTTP API (Brevo) when BREVO_API_KEY is set — that works on Render.
+// Falls back to SMTP (nodemailer) only if no Brevo key. Best-effort: if
+// neither is configured, sends are skipped and logged (never throws into
+// the request path; callers fire-and-forget).
 import nodemailer from "nodemailer";
 
 const {
+  BREVO_API_KEY,
   SMTP_HOST,
   SMTP_PORT,
   SMTP_SECURE,
@@ -12,55 +16,125 @@ const {
   OWNER_EMAIL,
 } = process.env;
 
-export const mailerReady = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
+const smtpReady = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
+const brevoReady = Boolean(BREVO_API_KEY);
+export const mailerReady = brevoReady || smtpReady;
+
+function sender() {
+  // Parse MAIL_FROM ("Name <email>") or fall back to a sensible default.
+  const raw = MAIL_FROM || OWNER_EMAIL || SMTP_USER || "";
+  const m = raw.match(/^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/);
+  if (m) return { name: m[1].trim() || "Hummusapiens", email: m[2].trim() };
+  return { name: "Hummusapiens", email: raw.trim() };
+}
 
 function rupees(paise) {
   return `₹${(Number(paise || 0) / 100).toFixed(0)}`;
 }
 
-// Pure builder — exported so it can be unit-tested without sending.
+// ---- transports ----
+let _tx = null;
+function smtp() {
+  if (_tx) return _tx;
+  _tx = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: Number(SMTP_PORT) || 587,
+    secure: String(SMTP_SECURE) === "true",
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+  });
+  return _tx;
+}
+
+async function brevoSend({ to, subject, text, replyTo }) {
+  const from = sender();
+  const r = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": BREVO_API_KEY,
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({
+      sender: from,
+      to: [{ email: to }],
+      replyTo: replyTo ? { email: replyTo } : undefined,
+      subject,
+      textContent: text,
+    }),
+  });
+  if (r.status === 201 || r.status === 200) return;
+  const body = await r.text();
+  throw new Error(`Brevo HTTP ${r.status}: ${body.slice(0, 300)}`);
+}
+
+// Single delivery primitive. Returns true if accepted by the provider.
+async function deliver(msg) {
+  if (brevoReady) {
+    await brevoSend(msg);
+    return true;
+  }
+  if (smtpReady) {
+    await smtp().sendMail({
+      from: MAIL_FROM || SMTP_USER,
+      to: msg.to,
+      replyTo: msg.replyTo,
+      subject: msg.subject,
+      text: msg.text,
+    });
+    return true;
+  }
+  console.log(`[mail] skipped (no provider configured): "${msg.subject}"`);
+  return false;
+}
+
+// ---- public API ----
 export function buildOrderEmails(order) {
   const lines = (order.items || [])
     .map((i) => `  ${i.qty} × ${i.name}`)
     .join("\n");
   const total = rupees(order.amount);
   const name = order.customer?.name || "there";
-
-  const customer = {
-    to: order.customer?.email,
-    subject: `Your Hummusapiens order is confirmed (${order.orderId})`,
-    text:
-      `Hi ${name},\n\n` +
-      `Thanks for your order! We've received your payment.\n\n` +
-      `Order: ${order.orderId}\n${lines}\n\nTotal paid: ${total}\n\n` +
-      `We'll be in touch on WhatsApp with delivery details.\n\n` +
-      `— Team Hummusapiens`,
+  return {
+    customer: order.customer?.email && {
+      to: order.customer.email,
+      subject: `Your Hummusapiens order is confirmed (${order.orderId})`,
+      text: `Hi ${name},\n\nThanks for your order! We've received your payment.\n\nOrder: ${order.orderId}\n${lines}\n\nTotal paid: ${total}\n\n— Team Hummusapiens`,
+    },
+    owner: OWNER_EMAIL && {
+      to: OWNER_EMAIL,
+      subject: `New paid order ${order.orderId} — ${total}`,
+      text: `New paid order.\n\nOrder: ${order.orderId}\nPayment: ${order.paymentId}\nCustomer: ${order.customer?.name || "-"} | ${order.customer?.email || "-"} | ${order.customer?.phone || "-"}\n\n${lines}\n\nTotal: ${total}`,
+    },
   };
-
-  const owner = {
-    to: OWNER_EMAIL,
-    subject: `New paid order ${order.orderId} — ${total}`,
-    text:
-      `New paid order.\n\n` +
-      `Order: ${order.orderId}\nPayment: ${order.paymentId}\n` +
-      `Customer: ${order.customer?.name || "-"} | ${order.customer?.email || "-"} | ${order.customer?.phone || "-"}\n\n` +
-      `${lines}\n\nTotal: ${total}`,
-  };
-
-  return { customer, owner };
 }
 
-// Sends a contact-form message to the brand inbox. Returns true only if
-// it was actually sent (false if SMTP isn't configured). Reply-To is set
-// to the visitor so you can just hit reply.
+export async function sendOrderEmails(order) {
+  if (!mailerReady) {
+    console.log(`[mail] skipped (no provider) for ${order.orderId}`);
+    return;
+  }
+  const { customer, owner } = buildOrderEmails(order);
+  for (const msg of [customer, owner]) {
+    if (!msg) continue;
+    try {
+      await deliver(msg);
+      console.log(`[mail] sent "${msg.subject}" to ${msg.to}`);
+    } catch (e) {
+      console.error(`[mail] failed for ${msg.to}:`, e?.message || e);
+    }
+  }
+}
+
 export async function sendContactEmail({ name, email, message }) {
   if (!mailerReady || !OWNER_EMAIL) {
-    console.log("[mail] contact skipped (SMTP/OWNER_EMAIL not configured)");
+    console.log("[mail] contact skipped (no provider / OWNER_EMAIL)");
     return false;
   }
   try {
-    await getTransport().sendMail({
-      from: MAIL_FROM || SMTP_USER,
+    await deliver({
       to: OWNER_EMAIL,
       replyTo: email,
       subject: `Website contact from ${name}`,
@@ -68,73 +142,33 @@ export async function sendContactEmail({ name, email, message }) {
     });
     console.log(`[mail] contact message from ${email} delivered`);
     return true;
-  } catch (err) {
-    console.error("[mail] contact send failed:", err?.message || err);
+  } catch (e) {
+    console.error("[mail] contact send failed:", e?.message || e);
     return false;
   }
 }
 
-// Admin diagnostic: verifies SMTP connection/auth and attempts one real
-// send to OWNER_EMAIL. Returns the actual error so we can see exactly why
-// delivery fails (bad app password vs. Render blocking SMTP, etc.).
+// Admin diagnostic — shows which provider is active and the real result.
 export async function diagnoseMailer() {
-  if (!mailerReady) {
-    return { mailerReady: false, missing: { SMTP_HOST: !SMTP_HOST, SMTP_USER: !SMTP_USER, SMTP_PASS: !SMTP_PASS } };
+  const provider = brevoReady ? "brevo" : smtpReady ? "smtp" : "none";
+  const out = { provider, owner: OWNER_EMAIL || null, from: sender() };
+  if (provider === "none") {
+    out.hint = "Set BREVO_API_KEY (recommended) or SMTP_* on the API service.";
+    return out;
   }
-  const out = { mailerReady: true, host: SMTP_HOST, port: Number(SMTP_PORT) || 587, owner: OWNER_EMAIL };
-  const t = getTransport();
-  try {
-    await t.verify();
-    out.verify = { ok: true };
-  } catch (e) {
-    out.verify = { ok: false, code: e?.code, error: e?.message || String(e) };
+  if (!OWNER_EMAIL) {
+    out.error = "OWNER_EMAIL not set — nowhere to deliver.";
+    return out;
   }
   try {
-    await t.sendMail({
-      from: MAIL_FROM || SMTP_USER,
+    await deliver({
       to: OWNER_EMAIL,
-      subject: "Hummusapiens — SMTP diagnostic ✅",
+      subject: "Hummusapiens — email diagnostic ✅",
       text: "If you received this, email delivery is working.",
     });
     out.send = { ok: true, to: OWNER_EMAIL };
   } catch (e) {
-    out.send = { ok: false, code: e?.code, error: e?.message || String(e) };
+    out.send = { ok: false, error: e?.message || String(e) };
   }
   return out;
-}
-
-let transporter = null;
-function getTransport() {
-  if (transporter) return transporter;
-  transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT) || 587,
-    secure: String(SMTP_SECURE) === "true",
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-    // Fail fast instead of hanging if SMTP is blocked/misconfigured.
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  });
-  return transporter;
-}
-
-export async function sendOrderEmails(order) {
-  if (!mailerReady) {
-    console.log(`[mail] skipped (SMTP not configured) for ${order.orderId}`);
-    return;
-  }
-  const { customer, owner } = buildOrderEmails(order);
-  const from = MAIL_FROM || SMTP_USER;
-  const jobs = [];
-  if (customer.to) jobs.push({ from, ...customer });
-  if (owner.to) jobs.push({ from, ...owner });
-  for (const msg of jobs) {
-    try {
-      await getTransport().sendMail(msg);
-      console.log(`[mail] sent "${msg.subject}" to ${msg.to}`);
-    } catch (err) {
-      console.error(`[mail] failed for ${msg.to}:`, err?.message || err);
-    }
-  }
 }
