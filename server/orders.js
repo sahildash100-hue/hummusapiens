@@ -73,3 +73,11 @@ export function listOrders() {
     b.createdAt.localeCompare(a.createdAt)
   );
 }
+
+export function deleteOrder(orderId) {
+  const all = readAll();
+  if (!all[orderId]) return false;
+  delete all[orderId];
+  writeAll(all);
+  return true;
+}

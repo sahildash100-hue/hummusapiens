@@ -121,6 +121,12 @@ export async function listOrders() {
   return rows.map(rowToOrder);
 }
 
+export async function deleteOrder(orderId) {
+  if (!pool) return fileOrders.deleteOrder(orderId);
+  const r = await pool.query("DELETE FROM orders WHERE order_id=$1", [orderId]);
+  return r.rowCount > 0;
+}
+
 export async function getStock() {
   if (!pool) return fileStock.getStock();
   const { rows } = await pool.query("SELECT name, qty FROM stock");

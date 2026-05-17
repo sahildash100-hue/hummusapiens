@@ -33,6 +33,10 @@ export const ADMIN_HTML = `<!doctype html>
   tr:last-child td{border-bottom:0}
   .pill{display:inline-block;padding:.2rem .6rem;border-radius:999px;font-size:.74rem;
         font-weight:700}
+  .del{background:transparent;color:var(--terra);border:1px solid var(--line);
+       border-radius:8px;padding:.25rem .55rem;font-size:.78rem;cursor:pointer}
+  .del:hover{background:var(--terra);color:#fff}
+  .del:disabled{opacity:.5;cursor:progress}
   .paid{background:rgba(91,115,65,.15);color:var(--olive)}
   .created{background:rgba(194,104,61,.15);color:var(--terra)}
   .empty{color:var(--muted);padding:2rem;text-align:center}
@@ -96,7 +100,7 @@ export const ADMIN_HTML = `<!doctype html>
     var rev=paid.reduce(function(n,o){return n+Number(o.amount||0)},0);
     var prev=pre.reduce(function(n,o){return n+Number(o.amount||0)},0);
     $('totals').textContent=rows.length+' total · '+pre.length+' preorders ('+inr(prev)+' intended) · '+paid.length+' paid · revenue '+inr(rev);
-    var h='<table><thead><tr><th>Order</th><th>Status</th><th>Items</th><th>Amount</th><th>Created</th><th>Paid</th><th>Payment ID</th></tr></thead><tbody>';
+    var h='<table><thead><tr><th>Order</th><th>Status</th><th>Items</th><th>Amount</th><th>Created</th><th>Paid</th><th>Payment ID</th><th></th></tr></thead><tbody>';
     rows.forEach(function(o){
       var items=(o.items||[]).map(function(i){return esc(i.qty+'× '+i.name)}).join('<br>');
       var cls=o.status==='paid'?'paid':'created';
@@ -106,10 +110,25 @@ export const ADMIN_HTML = `<!doctype html>
          '<td>'+inr(o.amount)+'</td>'+
          '<td>'+esc((o.createdAt||'').replace('T',' ').slice(0,16))+'</td>'+
          '<td>'+esc(o.paidAt?o.paidAt.replace('T',' ').slice(0,16):'—')+'</td>'+
-         '<td>'+esc(o.paymentId||'—')+'</td></tr>';
+         '<td>'+esc(o.paymentId||'—')+'</td>'+
+         '<td><button class="del" data-id="'+esc(o.orderId)+'">delete</button></td></tr>';
     });
     $('wrap').innerHTML=h+'</tbody></table>';
   }
+
+  document.addEventListener('click',function(e){
+    var b=e.target;
+    if(!b.classList||!b.classList.contains('del'))return;
+    var id=b.getAttribute('data-id');
+    if(!confirm('Delete order '+id+'? This cannot be undone.'))return;
+    var t=sessionStorage.getItem(K);
+    b.disabled=true;
+    fetch('/api/orders/'+encodeURIComponent(id),{method:'DELETE',
+      headers:{'x-admin-token':t}})
+      .then(function(r){return r.json().then(function(j){return{s:r.status,j:j}})})
+      .then(function(o){ if(o.s===200&&o.j.ok){load();} else {b.disabled=false;alert(o.j.error||('Error '+o.s));} })
+      .catch(function(){b.disabled=false;alert('Network error.')});
+  });
 
   function loadStock(){
     fetch('/api/stock').then(function(r){return r.json()}).then(function(d){

@@ -9,6 +9,7 @@ import {
   saveCreatedOrder,
   markPaid,
   listOrders,
+  deleteOrder,
   getStock,
   setStock,
   decrementStock,
@@ -288,6 +289,16 @@ function adminOnly(req, res, next) {
   }
   next();
 }
+
+app.delete("/api/orders/:id", adminOnly, async (req, res) => {
+  try {
+    const ok = await deleteOrder(req.params.id);
+    res.json({ ok });
+  } catch (e) {
+    console.error("deleteOrder failed:", e?.message || e);
+    res.status(500).json({ error: "Could not delete order." });
+  }
+});
 
 app.get("/api/orders", adminOnly, async (_req, res) => {
   try {
