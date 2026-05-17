@@ -14,7 +14,7 @@ import {
   setStock,
   decrementStock,
 } from "./store.js";
-import { sendOrderEmails, sendContactEmail } from "./mailer.js";
+import { sendOrderEmails, sendContactEmail, diagnoseMailer } from "./mailer.js";
 import { ADMIN_HTML } from "./adminPage.js";
 
 // Runs the one-time side effects when an order first becomes paid.
@@ -332,6 +332,10 @@ app.delete("/api/orders/:id", adminOnly, async (req, res) => {
     console.error("deleteOrder failed:", e?.message || e);
     res.status(500).json({ error: "Could not delete order." });
   }
+});
+
+app.get("/api/diag/email", adminOnly, async (_req, res) => {
+  res.json(await diagnoseMailer());
 });
 
 app.get("/api/orders", adminOnly, async (_req, res) => {

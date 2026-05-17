@@ -74,6 +74,35 @@ export async function sendContactEmail({ name, email, message }) {
   }
 }
 
+// Admin diagnostic: verifies SMTP connection/auth and attempts one real
+// send to OWNER_EMAIL. Returns the actual error so we can see exactly why
+// delivery fails (bad app password vs. Render blocking SMTP, etc.).
+export async function diagnoseMailer() {
+  if (!mailerReady) {
+    return { mailerReady: false, missing: { SMTP_HOST: !SMTP_HOST, SMTP_USER: !SMTP_USER, SMTP_PASS: !SMTP_PASS } };
+  }
+  const out = { mailerReady: true, host: SMTP_HOST, port: Number(SMTP_PORT) || 587, owner: OWNER_EMAIL };
+  const t = getTransport();
+  try {
+    await t.verify();
+    out.verify = { ok: true };
+  } catch (e) {
+    out.verify = { ok: false, code: e?.code, error: e?.message || String(e) };
+  }
+  try {
+    await t.sendMail({
+      from: MAIL_FROM || SMTP_USER,
+      to: OWNER_EMAIL,
+      subject: "Hummusapiens — SMTP diagnostic ✅",
+      text: "If you received this, email delivery is working.",
+    });
+    out.send = { ok: true, to: OWNER_EMAIL };
+  } catch (e) {
+    out.send = { ok: false, code: e?.code, error: e?.message || String(e) };
+  }
+  return out;
+}
+
 let transporter = null;
 function getTransport() {
   if (transporter) return transporter;
