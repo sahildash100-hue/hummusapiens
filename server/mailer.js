@@ -82,6 +82,10 @@ function getTransport() {
     port: Number(SMTP_PORT) || 587,
     secure: String(SMTP_SECURE) === "true",
     auth: { user: SMTP_USER, pass: SMTP_PASS },
+    // Fail fast instead of hanging if SMTP is blocked/misconfigured.
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
   return transporter;
 }

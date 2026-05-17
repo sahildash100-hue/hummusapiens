@@ -149,8 +149,12 @@ app.post("/api/contact", async (req, res) => {
     console.error("contact save failed:", e?.message || e);
     return res.status(500).json({ error: "Could not send. Try again." });
   }
-  const emailed = await sendContactEmail({ name, email, message });
-  res.json({ ok: true, emailed });
+  // Message is safely stored — respond immediately. Email is best-effort
+  // in the background so a slow/blocked SMTP never stalls the request.
+  res.json({ ok: true });
+  sendContactEmail({ name, email, message }).catch((e) =>
+    console.error("contact email error:", e?.message || e)
+  );
 });
 
 app.post("/api/preorder", async (req, res) => {
