@@ -531,7 +531,9 @@ export default function App() {
         </div>
         <div className="footer-base">
           <span>© {new Date().getFullYear()} Hummusapiens. All rights reserved.</span>
-          <span>{CONTACT_EMAIL}</span>
+          <span>
+            <a href="/privacy.html">Privacy Policy</a> · {CONTACT_EMAIL}
+          </span>
         </div>
       </footer>
 
@@ -559,8 +561,8 @@ export default function App() {
             <img src="/img/mascot.png" alt="" />
             <h4>You're on the list! 🎉</h4>
             <p>
-              Preorder reserved — no payment taken. We'll email you the
-              moment it's ready to ship.
+              Preorder reserved — no payment taken. Your spot is saved and
+              we'll be in touch when it's ready.
             </p>
             <button
               className="btn btn-primary"
@@ -657,7 +659,7 @@ export default function App() {
               </div>
               <p className="d-note">
                 Preorder now — <strong>no payment taken</strong>. Reserve
-                your batch and we'll email you when it ships.
+                your batch; we'll keep you posted.
               </p>
               {payMsg && <p className="d-warn">{payMsg}</p>}
               <button

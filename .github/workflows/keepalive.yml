@@ -1,0 +1,25 @@
+name: keep-alive
+
+# Pings the API so Render's free instance doesn't sleep (it idles out
+# after ~15 min). GitHub cron can run a few minutes late, so this fires
+# every 10 min to stay comfortably under the 15-min window.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 \
+              https://hummusapiens-api.onrender.com/api/health) && \
+              echo "ping $i -> HTTP $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 20
+          done
+          echo "health check did not return 200"
+          exit 1
