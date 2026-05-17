@@ -8,6 +8,22 @@ const CONTACT_EMAIL = "hello@hummusapiens.in";
 // backend stays in place for when we switch checkout back on.
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8787";
 
+// The Google tag (AW-18157410332) is loaded statically in index.html.
+// To count preorders as a Google Ads conversion, create a conversion
+// action in Google Ads, then set its label on the WEB service in Render:
+//   VITE_GADS_LABEL = "abcDEF12ghIjkLM"
+// Until the label is set, the base tag still tracks visits/remarketing;
+// the conversion event simply doesn't fire (no error).
+const GADS_ID = "AW-18157410332";
+const GADS_LABEL = import.meta.env.VITE_GADS_LABEL || "";
+
+function trackPreorderConversion() {
+  if (!GADS_LABEL || typeof window.gtag !== "function") return;
+  window.gtag("event", "conversion", {
+    send_to: `${GADS_ID}/${GADS_LABEL}`,
+  });
+}
+
 const NAV = ["Home", "About", "Products", "Gallery", "Contact"];
 
 const PRODUCTS = [
@@ -178,6 +194,7 @@ export default function App() {
       setCart([]);
       setPaying(false);
       setPlaced(true);
+      trackPreorderConversion();
     } catch (err) {
       setPaying(false);
       setPayMsg(

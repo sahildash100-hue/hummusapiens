@@ -58,6 +58,7 @@ export const ADMIN_HTML = `<!doctype html>
     <button id="go">Load orders</button>
     <button id="out" class="ghost" type="button">Forget token</button>
     <button id="ref" class="ghost" type="button">Refresh</button>
+    <button id="csv" class="ghost" type="button">Download CSV</button>
   </div>
   <div class="msg" id="msg"></div>
 
@@ -164,6 +165,22 @@ export const ADMIN_HTML = `<!doctype html>
 
   $('savestock').onclick=saveStock;
   loadStock();
+
+  $('csv').onclick=function(){
+    var t=sessionStorage.getItem(K);
+    if(!t){$('msg').textContent='Load with a token first.';return}
+    $('msg').textContent='Preparing CSV…';
+    fetch('/api/orders.csv',{headers:{'x-admin-token':t}})
+      .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
+      .then(function(b){
+        var u=URL.createObjectURL(b);
+        var a=document.createElement('a');
+        a.href=u; a.download='hummusapiens-preorders.csv';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(u); $('msg').textContent='';
+      })
+      .catch(function(){$('msg').textContent='Could not download CSV.'});
+  };
 
   $('go').onclick=load;
   $('ref').onclick=load;

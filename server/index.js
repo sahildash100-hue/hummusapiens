@@ -309,6 +309,39 @@ app.get("/api/orders", adminOnly, async (_req, res) => {
   }
 });
 
+app.get("/api/orders.csv", adminOnly, async (_req, res) => {
+  try {
+    const orders = await listOrders();
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const head = [
+      "Order ID", "Status", "Created", "Name", "Email", "Phone",
+      "Items", "Amount (Rs)",
+    ];
+    const lines = orders.map((o) =>
+      [
+        o.orderId,
+        o.status,
+        o.createdAt,
+        o.customer?.name,
+        o.customer?.email,
+        o.customer?.phone,
+        (o.items || []).map((i) => `${i.qty}x ${i.name}`).join("; "),
+        Math.round(Number(o.amount || 0) / 100),
+      ].map(q).join(",")
+    );
+    const csv = [head.map(q).join(","), ...lines].join("\r\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="hummusapiens-preorders.csv"`
+    );
+    res.send("﻿" + csv); // BOM so Excel reads UTF-8 correctly
+  } catch (e) {
+    console.error("orders.csv failed:", e?.message || e);
+    res.status(500).json({ error: "Could not export." });
+  }
+});
+
 // Public: lets the storefront show stock levels / sold-out state.
 // Filtered to the current catalog so retired products (still rows in the
 // DB from an earlier seed) don't appear on the site or in admin.
